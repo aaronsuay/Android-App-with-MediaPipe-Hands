@@ -72,8 +72,13 @@ dependencies {
 
 
     // MediaPipe
-   // implementation("com.google.mediapipe:solution-core:0.10.0-beta")
-    // implementation("com.google.mediapipe:hand-landmarker:0.10.0-beta")
+    //implementation("com.google.mediapipe:solution-core:0.10.0-beta")
+   // implementation("com.google.mediapipe:hand-landmarker:0.10.0-beta")
+    // implementation("com.google.mediapipe:solution-core:0.4.4")
+   // implementation("com.google.mediapipe:hands:0.4.4")
+    implementation("com.google.mediapipe:tasks-core:0.10.0")
+    implementation("com.google.mediapipe:tasks-vision:0.10.0")
+
 
 
 
