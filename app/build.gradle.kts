@@ -79,6 +79,10 @@ dependencies {
     implementation("com.google.mediapipe:tasks-core:0.10.0")
     implementation("com.google.mediapipe:tasks-vision:0.10.0")
 
+    //TCP
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+
 
 
 

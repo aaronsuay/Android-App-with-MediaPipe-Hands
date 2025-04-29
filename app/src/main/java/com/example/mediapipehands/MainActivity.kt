@@ -83,18 +83,27 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.viewinterop.AndroidView
-
-
-
-
+import kotlin.math.acos
+import kotlin.math.sqrt
 import android.renderscript.*
-
-
+import java.net.Socket
+import java.io.OutputStream
+import kotlinx.coroutines.*
+import androidx.compose.ui.graphics.Color as cully
 import com.example.mediapipehands.ui.theme.MediaPipeHandsTheme
 import com.google.mediapipe.formats.proto.LandmarkProto
+import kotlin.math.atan2
 
 @androidx.camera.camera2.interop.ExperimentalCamera2Interop
+
+
 class MainActivity : ComponentActivity() {
+    // tcpServerInformation
+    var tcpServerAddress: String = ""
+    var tcpServerPort: Int = 0
+    var tcpPassword: String = ""
+    var isConnectedToServer by mutableStateOf(false)
+
 
     private lateinit var permissionsLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
     private var permissionsGranted by mutableStateOf(false)
@@ -115,8 +124,51 @@ class MainActivity : ComponentActivity() {
                 val permissionsState by remember { derivedStateOf { permissionsGranted } }
                 val navController = rememberNavController()
 
-                NavHost(navController = navController, startDestination = "home") {
+                NavHost(navController = navController, startDestination = "connect") {
+                    composable("connect") {
+                        ConnectScreen { address, port, password ->
+                            // Save or pass these values
+                            tcpServerAddress = address
+                            tcpServerPort = port
+                            tcpPassword = password
+
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    tcpSocket = Socket(tcpServerAddress, tcpServerPort)
+                                    tcpOutputStream = tcpSocket?.getOutputStream()
+
+                                    // Optionally send the password first
+                                    if (tcpPassword.isNotEmpty()) {
+                                        tcpOutputStream?.write((tcpPassword + "\n").toByteArray())
+                                    }
+
+                                    isConnectedToServer = true //connection success
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    isConnectedToServer = false //connection failed
+                                }
+                            }
+
+
+                            navController.navigate("home")
+                        }
+                    }
                     composable("home") {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            if (isConnectedToServer) {
+                                Text("Connected to Server!", color = cully(0xFF00FF00))
+                            } else {
+                                Text("Not Connected", color = cully(0xFFFF0000))
+                            }
+
+                            Spacer(modifier = Modifier.height(96.dp))
+
+
+                        }
 
                         CameraUI(
                             permissionsGranted = permissionsState,
@@ -149,6 +201,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+var tcpSocket: Socket? = null
+var tcpOutputStream: OutputStream? = null
+
 
 @Composable
 fun CameraUI(
@@ -175,6 +230,8 @@ fun CameraUI(
             Text(if (permissionsGranted) "Start Camera" else "Grant Permissions")
         }
     }
+
+
 }
 
 @Composable
@@ -391,8 +448,104 @@ fun Camera2Preview(modifier: Modifier = Modifier) {
                         val endY = end.y() * drawingSurfaceView.height
 
                         canvas.drawLine(startX, startY, endX, endY, linePaint)
+
+                        val thumbAngles = listOf(
+                            calculateAngle(hand[1].x(), hand[1].y(), hand[2].x(), hand[2].y(), hand[3].x(), hand[3].y()),
+                            calculateAngle(hand[2].x(), hand[2].y(), hand[3].x(), hand[3].y(), hand[4].x(), hand[4].y())
+                        )
+
+                        val indexAngles = listOf(
+                            calculateAngle(hand[5].x(), hand[5].y(), hand[6].x(), hand[6].y(), hand[7].x(), hand[7].y()),
+                            calculateAngle(hand[6].x(), hand[6].y(), hand[7].x(), hand[7].y(), hand[8].x(), hand[8].y())
+                        )
+
+                        val middleAngles = listOf(
+                            calculateAngle(hand[9].x(), hand[9].y(), hand[10].x(), hand[10].y(), hand[11].x(), hand[11].y()),
+                            calculateAngle(hand[10].x(), hand[10].y(), hand[11].x(), hand[11].y(), hand[12].x(), hand[12].y())
+                        )
+
+                        val ringAngles = listOf(
+                            calculateAngle(hand[13].x(), hand[13].y(), hand[14].x(), hand[14].y(), hand[15].x(), hand[15].y()),
+                            calculateAngle(hand[14].x(), hand[14].y(), hand[15].x(), hand[15].y(), hand[16].x(), hand[16].y())
+                        )
+
+                        val pinkyAngles = listOf(
+                            calculateAngle(hand[17].x(), hand[17].y(), hand[18].x(), hand[18].y(), hand[19].x(), hand[19].y()),
+                            calculateAngle(hand[18].x(), hand[18].y(), hand[19].x(), hand[19].y(), hand[20].x(), hand[20].y())
+                        )
+
+                        val avgThumb = thumbAngles.average().toFloat()
+                        val avgIndex = indexAngles.average().toFloat()
+                        val avgMiddle = middleAngles.average().toFloat()
+                        val avgRing = ringAngles.average().toFloat()
+                        val avgPinky = pinkyAngles.average().toFloat()
+
+
+
+                        val wrist = hand[0]
+                        val thumbBase = hand[1]
+
+                        val wristPronationAngle = calculatePronationAngle(wrist.x(), wrist.y(), thumbBase.x(), thumbBase.y())
+                        val normalizedPronationAngle = (wristPronationAngle + 360f) % 360f
+
+
+                        val dataString = "${avgThumb.toInt()},${avgIndex.toInt()},${avgMiddle.toInt()},${avgRing.toInt()},${avgPinky.toInt()},${normalizedPronationAngle.toInt()}\n"
+                        CoroutineScope(Dispatchers.IO).launch {
+                            try {
+                                tcpOutputStream?.write(dataString.toByteArray())
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
+                        val thumbPaint = Paint().apply {
+                            color = angleToColor(avgThumb)
+                            textSize = 40f
+                            style = Paint.Style.FILL
+                        }
+
+                        val indexPaint = Paint().apply {
+                            color = angleToColor(avgIndex)
+                            textSize = 40f
+                            style = Paint.Style.FILL
+                        }
+
+                        val middlePaint = Paint().apply {
+                            color = angleToColor(avgMiddle)
+                            textSize = 40f
+                            style = Paint.Style.FILL
+                        }
+
+                        val ringPaint = Paint().apply {
+                            color = angleToColor(avgRing)
+                            textSize = 40f
+                            style = Paint.Style.FILL
+                        }
+
+                        val pinkyPaint = Paint().apply {
+                            color = angleToColor(avgPinky)
+                            textSize = 40f
+                            style = Paint.Style.FILL
+                        }
+
+
+                        val textPaint = Paint().apply {
+                            color = Color.WHITE
+                            textSize = 40f
+                            style = Paint.Style.FILL
+                        }
+
+                        canvas.drawText("Thumb: ${avgThumb.toInt()}°", 20f, 50f, thumbPaint)
+                        canvas.drawText("Index: ${avgIndex.toInt()}°", 20f, 100f, indexPaint)
+                        canvas.drawText("Middle: ${avgMiddle.toInt()}°", 20f, 150f, middlePaint)
+                        canvas.drawText("Ring: ${avgRing.toInt()}°", 20f, 200f, ringPaint)
+                        canvas.drawText("Pinky: ${avgPinky.toInt()}°", 20f, 250f, pinkyPaint)
+                        canvas.drawText("Wrist: ${normalizedPronationAngle.toInt()}°", 20f, 300f, textPaint)
                     }
                 }
+
+
+
 
                 drawingSurfaceView.holder.unlockCanvasAndPost(canvas)
             }
@@ -438,6 +591,88 @@ fun CameraScreen() {
         Camera2Preview(modifier = Modifier.fillMaxSize())
     }
 }
+
+fun calculateAngle(ax: Float, ay: Float, bx: Float, by: Float, cx: Float, cy: Float): Float {
+    val abX = ax - bx
+    val abY = ay - by
+    val cbX = cx - bx
+    val cbY = cy - by
+
+    val dot = (abX * cbX + abY * cbY)
+    val magAB = sqrt(abX * abX + abY * abY)
+    val magCB = sqrt(cbX * cbX + cbY * cbY)
+
+    val cosAngle = dot / (magAB * magCB + 1e-6f) // small value to avoid division by zero
+    val angle = Math.toDegrees(acos(cosAngle).toDouble()).toFloat()
+    return 180f - angle
+
+}
+fun angleToColor(angle: Float): Int {
+    return when {
+        angle < 30f -> Color.GREEN
+        angle < 60f -> Color.YELLOW
+        else -> Color.RED
+    }
+}
+@Composable
+fun ConnectScreen(
+    onConnect: (String, Int, String) -> Unit
+) {
+    var address by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        TextField(
+            value = address,
+            onValueChange = { address = it },
+            label = { Text("Server Address") }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextField(
+            value = port,
+            onValueChange = { port = it },
+            label = { Text("Port") }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") }
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(onClick = {
+            val portNumber = port.toIntOrNull()
+            if (portNumber != null && address.isNotBlank()) {
+                onConnect(address, portNumber, password)
+            }
+        }) {
+            Text("Connect")
+        }
+    }
+}
+
+fun calculatePronationAngle(ax: Float, ay: Float, bx: Float, by: Float): Float {
+    val dx = bx - ax
+    val dy = by - ay
+    val angleRad = atan2(dy, dx) // Radians
+    val angleDeg = Math.toDegrees(angleRad.toDouble()).toFloat()
+
+    return angleDeg
+}
+
 
 
 
